@@ -1,0 +1,12 @@
+[package]
+name = "phalanx"
+version = "0.1.0"
+authors = ["Colin Moore <colin@moore.one>"]
+edition = "2018"
+
+[lib]
+name = "phalanx"
+
+[dependencies]
+phalanx_codegen = { path = "../phalanx_codegen" }
+actix-web = "3.3.2"

@@ -1,0 +1,7 @@
+[workspace]
+members = [
+  "phalanx",
+  "phalanx_codegen",
+
+  "examples/simple_server",
+]
