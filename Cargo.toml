@@ -3,5 +3,5 @@ members = [
   "phalanx",
   "phalanx_codegen",
 
-  "examples/simple_server",
+  "examples/hello_world",
 ]

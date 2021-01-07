@@ -1,6 +1,5 @@
 use std::convert::TryFrom;
 
-// use proc_macro::TokenStream;
 use proc_macro2::{Ident, TokenStream as TokenStream2};
 
 use syn::{parse::Parse, Attribute, FnArg, ImplItemMethod, LitStr, Pat, Path, Type};
@@ -12,7 +11,6 @@ use route_attr::RouteAttr;
 pub struct Route<'a> {
     method: &'a ImplItemMethod,
     server_type: &'a Type,
-    args: Vec<&'a FnArg>,
     attrs: Vec<&'a Attribute>,
     route_attr: RouteAttr,
 }
@@ -20,20 +18,6 @@ pub struct Route<'a> {
 impl<'a> Route<'a> {
     pub fn new(method: &'a ImplItemMethod, server_type: &'a Type) -> syn::Result<Self> {
         validate_method(method)?;
-
-        let sig = &method.sig;
-        // Remove the initial self type from this list of args (and check it's not a typed receiver)
-        let args: Vec<&FnArg> = if let Some(rec) = sig.receiver() {
-            if let FnArg::Typed(_) = rec {
-                return Err(syn::Error::new_spanned(
-                &sig.receiver(),
-                "Self receivers with a specified type, such as self: Box<Self>, are not supported by phalanx_server."
-                ));
-            }
-            sig.inputs.iter().skip(1).collect()
-        } else {
-            sig.inputs.iter().collect()
-        };
 
         let mut attrs = Vec::with_capacity(method.attrs.len() - 1);
         let mut route_attr = None;
@@ -55,7 +39,6 @@ impl<'a> Route<'a> {
         Ok(Self {
             method,
             server_type,
-            args,
             attrs,
             route_attr: route_attr.unwrap(),
         })
@@ -66,9 +49,21 @@ impl<'a> Route<'a> {
     }
 }
 
-impl<'a> ToTokens for Route<'a> {
+pub struct ServerRoute<'a>(Route<'a>);
+
+impl<'a> From<Route<'a>> for ServerRoute<'a> {
+    fn from(route: Route<'a>) -> Self {
+        ServerRoute(route)
+    }
+}
+
+impl<'a> ToTokens for ServerRoute<'a> {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
-        let arg_names: Vec<&Ident> = self.args.iter().map(|f| match f {
+        // Get the method arguments, but skip the self parameter
+        let args: Vec<&FnArg> = self.0.method.sig.inputs.iter().skip(1).collect();
+
+        // Extract the arg names
+        let arg_names: Vec<&Ident> = args.iter().map(|f| match f {
             FnArg::Typed(typed) => {
                 match typed.pat.as_ref() {
                     Pat::Ident(pat_ident) => {
@@ -80,28 +75,81 @@ impl<'a> ToTokens for Route<'a> {
             FnArg::Receiver(_) => panic!("Receiver type found when it should have been automatically removed from arg list already.")
         }).collect();
 
-        let arg_types: Vec<&Type> = self.args.iter().map(|f| match f {
+        // Extract the arg types
+        let arg_types: Vec<&Type> = args.iter().map(|f| match f {
             FnArg::Typed(typed) => typed.ty.as_ref(),
             FnArg::Receiver(_) => panic!("Receiver type found when it should have been automatically removed from arg list already.")
         }).collect();
 
-        let asyncness = self.method.sig.asyncness;
-        let awaitness = match asyncness {
-            Some(_) => quote! {.await},
-            None => quote! {},
-        };
-
-        let fn_name = self.fn_name();
-        let ret_type = &self.method.sig.output;
-        let server_type = self.server_type;
-        let RouteAttr { path, route } = &self.route_attr;
-        let attrs = &self.attrs;
+        // Output the new method
+        let fn_name = self.0.fn_name();
+        let ret_type = &self.0.method.sig.output;
+        let server_type = self.0.server_type;
+        let RouteAttr { path, route } = &self.0.route_attr;
+        let attrs = &self.0.attrs;
 
         let stream = quote! {
             #[actix_web::#path(#route)]
             #(#attrs)*
-            pub #asyncness fn #fn_name ( server: phalanx::reexports::web::Data<#server_type>, phalanx::reexports::web::Path(( #(#arg_names),* )): phalanx::reexports::web::Path<( #(#arg_types),* )> ) #ret_type {
-                server.into_inner(). #fn_name ( #(#arg_names),* ) #awaitness
+            pub async fn #fn_name ( server: phalanx::reexports::web::Data<#server_type>, phalanx::reexports::web::Path(( #(#arg_names),* )): phalanx::reexports::web::Path<( #(#arg_types),* )> ) #ret_type {
+                server.into_inner(). #fn_name ( #(#arg_names),* ).await
+            }
+        };
+
+        tokens.extend(stream);
+    }
+}
+
+pub struct ClientRoute<'a>(Route<'a>);
+
+impl<'a> From<Route<'a>> for ClientRoute<'a> {
+    fn from(route: Route<'a>) -> Self {
+        ClientRoute(route)
+    }
+}
+
+impl<'a> ToTokens for ClientRoute<'a> {
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+        // Get the method arguments
+        let args: Vec<&FnArg> = self.0.method.sig.inputs.iter().collect();
+        let fn_name = self.0.fn_name();
+        let raw_ret_type = &self.0.method.sig.output;
+        let attrs = &self.0.attrs;
+        // let server_type = self.0.server_type;
+        let RouteAttr { path, route } = &self.0.route_attr;
+
+        let format_args: Vec<TokenStream2> = args
+            .iter()
+            .skip(1)
+            .map(|arg| match arg {
+                FnArg::Typed(typed) => &typed.pat,
+                arg => panic!("Unknown argument type found: {:?}", arg),
+            })
+            .map(|ident| quote! { #ident = #ident })
+            .collect();
+
+        let format_url = if format_args.len() > 0 {
+            quote! { &format!( #route , #(#format_args),* ) }
+        } else {
+            quote! { #route }
+        };
+
+        // Ensure the type is a result type
+        let ret_type = match raw_ret_type {
+            syn::ReturnType::Default => {
+                quote! { () }
+            }
+            syn::ReturnType::Type(_, ty) => {
+                quote! { #ty }
+            }
+        };
+
+        let stream = quote! {
+            #(#attrs)*
+            pub async fn #fn_name ( #(#args),* ) -> Result< #ret_type , Box<dyn std::error::Error> > {
+                let __client  = phalanx::client::PhalanxClient::client(self);
+                let res = phalanx::client::PhalanxResponse::from(__client.client. #path (&__client.format_url( #format_url )).send().await?);
+                Ok(<#ret_type as phalanx::util::AsyncTryFrom<phalanx::client::PhalanxResponse>>::try_from(res).await?)
             }
         };
 
@@ -113,41 +161,60 @@ fn validate_method(method: &ImplItemMethod) -> syn::Result<()> {
     if method.defaultness.is_some() {
         return Err(syn::Error::new_spanned(
             &method.defaultness,
-            "Default methods are not currently supported by phalanx_server.",
+            "Default methods are not currently supported by phalanx.",
         ));
     }
 
     let sig = &method.sig;
+
+    match sig.receiver() {
+        None => return Err(syn::Error::new_spanned(
+        &sig,
+        "Phalanx methods must have a &self parameter."
+        )),
+        Some(FnArg::Typed(_)) => return Err(syn::Error::new_spanned(
+        &sig.receiver(),
+        "Self receivers with a specified type, such as self: Box<Self>, are not supported by phalanx."
+        )),
+        _ => {}
+    }
+
+    if sig.asyncness.is_none() {
+        return Err(syn::Error::new_spanned(
+            &sig,
+            "Phalanx methods must be async.",
+        ));
+    }
+
     if sig.unsafety.is_some() {
         return Err(syn::Error::new_spanned(
-            &sig.abi,
-            "Unsafe methods are not supported by phalanx_server.",
+            &sig.unsafety,
+            "Unsafe methods are not supported by phalanx.",
         ));
     }
 
-    let sig = &method.sig;
     if sig.abi.is_some() {
         return Err(syn::Error::new_spanned(
             &sig.abi,
-            "ABI methods are not supported by phalanx_server.",
+            "ABI methods are not supported by phalanx.",
         ));
     }
     if sig.variadic.is_some() {
         return Err(syn::Error::new_spanned(
             &sig.variadic,
-            "Variadic methods are not supported by phalanx_server.",
+            "Variadic methods are not supported by phalanx.",
         ));
     }
     if !sig.generics.params.is_empty() {
         return Err(syn::Error::new_spanned(
             &sig.generics,
-            "Generic methods are not supported by phalanx_server.",
+            "Generic methods are not supported by phalanx.",
         ));
     }
     if !sig.generics.params.is_empty() {
         return Err(syn::Error::new_spanned(
             &sig.generics,
-            "Generic methods are not supported by phalanx_server.",
+            "Generic methods are not supported by phalanx.",
         ));
     }
 
@@ -168,7 +235,6 @@ mod route_attr {
         type Error = syn::Error;
 
         fn try_from(attr: &Attribute) -> Result<Self, Self::Error> {
-            #[derive(Debug)]
             struct RawRoute {
                 route: LitStr,
             }

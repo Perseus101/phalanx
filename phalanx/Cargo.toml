@@ -10,3 +10,6 @@ name = "phalanx"
 [dependencies]
 phalanx_codegen = { path = "../phalanx_codegen" }
 actix-web = "3.3.2"
+reqwest = "0.10.10"
+async-trait = "0.1.42"
+err-derive = "0.3.0"
