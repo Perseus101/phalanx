@@ -12,7 +12,7 @@ pub mod prelude {
 }
 
 pub mod reexports {
-    pub use actix_web::{http, middleware, web, App, HttpResponse, HttpServer};
+    pub use actix_web::{http, middleware, web, App, HttpResponse, HttpServer, Responder};
 
     pub use reqwest::Client;
 }

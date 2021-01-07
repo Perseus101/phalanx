@@ -78,7 +78,18 @@ pub fn phalanx_server(_attr: TokenStream, input: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 #[proc_macro_error]
 pub fn phalanx_client(attr: TokenStream, input: TokenStream) -> TokenStream {
-    let client_type = parse_macro_input!(attr as Type);
+    let client_type: Type = match syn::parse(attr) {
+        Ok(ty) => ty,
+        Err(err) => {
+            return syn::Error::new(
+                err.span(),
+                "phalanx_client requires a client type, i.e. `#[phalanx_client(MyClient)]`",
+            )
+            .to_compile_error()
+            .into()
+        }
+    };
+
     let parsed_impl = parse_macro_input!(input as ItemImpl);
     if let Err(err) = validate_impl(&parsed_impl) {
         return err.to_compile_error().into();
@@ -120,8 +131,8 @@ fn validate_impl(parsed_impl: &ItemImpl) -> syn::Result<()> {
     Ok(())
 }
 
-fn parse_routes<'a>(parsed_impl: &'a ItemImpl) -> syn::Result<Vec<Route<'a>>> {
-    let mut routes: Vec<Route<'a>> = Vec::new();
+fn parse_routes(parsed_impl: &ItemImpl) -> syn::Result<Vec<Route>> {
+    let mut routes: Vec<Route> = Vec::new();
     let server_type = parsed_impl.self_ty.as_ref();
 
     for item in &parsed_impl.items {

@@ -1,5 +1,6 @@
 use std::string::FromUtf8Error;
 
+use async_trait::async_trait;
 use err_derive::Error;
 
 use reqwest::{Client as ReqwestClient, Error as ReqwestError, Response};
@@ -16,8 +17,8 @@ impl Client {
         Client { client, url }
     }
 
-    pub fn url(url: String) -> Self {
-        Self::new(ReqwestClient::default(), url)
+    pub fn url(url: &str) -> Self {
+        Self::new(ReqwestClient::default(), String::from(url))
     }
 
     pub fn format_url(&self, relative_url: &str) -> String {
@@ -27,13 +28,13 @@ impl Client {
 
 impl From<String> for Client {
     fn from(url: String) -> Self {
-        Self::url(url)
+        Self::new(ReqwestClient::default(), url)
     }
 }
 
 impl<'a> From<&'a str> for Client {
     fn from(url: &'a str) -> Self {
-        Self::url(String::from(url))
+        Self::url(url)
     }
 }
 
@@ -62,11 +63,21 @@ impl From<FromUtf8Error> for PhalanxClientError {
         PhalanxClientError::ParseError(err.into())
     }
 }
-#[async_trait::async_trait]
+#[async_trait]
 impl AsyncTryFrom<PhalanxResponse> for String {
     type Error = PhalanxClientError;
 
-    async fn try_from(value: PhalanxResponse) -> Result<Self, Self::Error> {
-        Ok(String::from_utf8(Vec::from(&value.0.bytes().await?[..]))?)
+    async fn try_from(res: PhalanxResponse) -> Result<Self, Self::Error> {
+        Ok(String::from_utf8(Vec::from(&res.0.bytes().await?[..]))?)
+    }
+}
+
+#[async_trait]
+impl AsyncTryFrom<PhalanxResponse> for () {
+    type Error = PhalanxClientError;
+
+    async fn try_from(res: PhalanxResponse) -> Result<Self, Self::Error> {
+        res.0.error_for_status()?;
+        Ok(())
     }
 }

@@ -1,0 +1,7 @@
+error: phalanx_client requires a client type, i.e. `#[phalanx_client(MyClient)]`
+ --> $DIR/requires-client.rs:8:1
+  |
+8 | #[phalanx_client]
+  | ^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in an attribute macro (in Nightly builds, run with -Z macro-backtrace for more info)

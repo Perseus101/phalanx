@@ -12,3 +12,8 @@ syn = { version = "1.0.17", features = ["full"] }
 proc-macro-error = "0.4.12"
 quote = "1.0.3"
 proc-macro2 = "1.0.9"
+
+[dev-dependencies]
+phalanx = { path = "../phalanx" }
+actix-web = "3.3.2"
+trybuild = "1.0.38"

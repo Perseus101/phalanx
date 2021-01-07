@@ -8,15 +8,16 @@ use quote::{quote, ToTokens};
 
 use route_attr::RouteAttr;
 
-pub struct Route<'a> {
-    method: &'a ImplItemMethod,
-    server_type: &'a Type,
-    attrs: Vec<&'a Attribute>,
+#[derive(Clone)]
+pub struct Route {
+    method: ImplItemMethod,
+    server_type: Type,
+    attrs: Vec<Attribute>,
     route_attr: RouteAttr,
 }
 
-impl<'a> Route<'a> {
-    pub fn new(method: &'a ImplItemMethod, server_type: &'a Type) -> syn::Result<Self> {
+impl Route {
+    pub fn new(method: &ImplItemMethod, server_type: &Type) -> syn::Result<Self> {
         validate_method(method)?;
 
         let mut attrs = Vec::with_capacity(method.attrs.len() - 1);
@@ -32,13 +33,13 @@ impl<'a> Route<'a> {
                     }
                     route_attr = Some(parsed_attr);
                 }
-                Err(_) => attrs.push(attr),
+                Err(_) => attrs.push(attr.clone()),
             }
         }
 
         Ok(Self {
-            method,
-            server_type,
+            method: method.clone(),
+            server_type: server_type.clone(),
             attrs,
             route_attr: route_attr.unwrap(),
         })
@@ -49,15 +50,15 @@ impl<'a> Route<'a> {
     }
 }
 
-pub struct ServerRoute<'a>(Route<'a>);
+pub struct ServerRoute(Route);
 
-impl<'a> From<Route<'a>> for ServerRoute<'a> {
-    fn from(route: Route<'a>) -> Self {
+impl From<Route> for ServerRoute {
+    fn from(route: Route) -> Self {
         ServerRoute(route)
     }
 }
 
-impl<'a> ToTokens for ServerRoute<'a> {
+impl ToTokens for ServerRoute {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
         // Get the method arguments, but skip the self parameter
         let args: Vec<&FnArg> = self.0.method.sig.inputs.iter().skip(1).collect();
@@ -81,18 +82,32 @@ impl<'a> ToTokens for ServerRoute<'a> {
             FnArg::Receiver(_) => panic!("Receiver type found when it should have been automatically removed from arg list already.")
         }).collect();
 
+        let (ret_type, ret_trailer) = match &self.0.method.sig.output {
+            syn::ReturnType::Default => (
+                quote! { -> phalanx::server::UnitResponder },
+                quote! { phalanx::server::UnitResponder },
+            ),
+            ty => (quote! { #ty }, quote! { res }),
+        };
+
         // Output the new method
         let fn_name = self.0.fn_name();
-        let ret_type = &self.0.method.sig.output;
-        let server_type = self.0.server_type;
+        let server_type = &self.0.server_type;
         let RouteAttr { path, route } = &self.0.route_attr;
         let attrs = &self.0.attrs;
+
+        let path_args = if args.len() > 0 {
+            quote! { phalanx::reexports::web::Path(( #(#arg_names),* )): phalanx::reexports::web::Path<( #(#arg_types),* )> }
+        } else {
+            quote! {}
+        };
 
         let stream = quote! {
             #[actix_web::#path(#route)]
             #(#attrs)*
-            pub async fn #fn_name ( server: phalanx::reexports::web::Data<#server_type>, phalanx::reexports::web::Path(( #(#arg_names),* )): phalanx::reexports::web::Path<( #(#arg_types),* )> ) #ret_type {
-                server.into_inner(). #fn_name ( #(#arg_names),* ).await
+            async fn #fn_name ( server: phalanx::reexports::web::Data<#server_type>, #path_args ) #ret_type {
+                let res = server.into_inner(). #fn_name ( #(#arg_names),* ).await;
+                #ret_trailer
             }
         };
 
@@ -100,15 +115,15 @@ impl<'a> ToTokens for ServerRoute<'a> {
     }
 }
 
-pub struct ClientRoute<'a>(Route<'a>);
+pub struct ClientRoute(Route);
 
-impl<'a> From<Route<'a>> for ClientRoute<'a> {
-    fn from(route: Route<'a>) -> Self {
+impl From<Route> for ClientRoute {
+    fn from(route: Route) -> Self {
         ClientRoute(route)
     }
 }
 
-impl<'a> ToTokens for ClientRoute<'a> {
+impl ToTokens for ClientRoute {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
         // Get the method arguments
         let args: Vec<&FnArg> = self.0.method.sig.inputs.iter().collect();
@@ -226,6 +241,7 @@ mod route_attr {
 
     use super::*;
 
+    #[derive(Clone)]
     pub(super) struct RouteAttr {
         pub path: Path,
         pub route: LitStr,
