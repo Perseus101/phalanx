@@ -1,8 +1,8 @@
-use std::string::FromUtf8Error;
+use std::{future::Future, string::FromUtf8Error};
 
-use async_trait::async_trait;
 use err_derive::Error;
 
+use futures::future::{err, ok, Ready};
 use reqwest::{Client as ReqwestClient, Error as ReqwestError, Response};
 
 use crate::util::AsyncTryFrom;
@@ -63,21 +63,28 @@ impl From<FromUtf8Error> for PhalanxClientError {
         PhalanxClientError::ParseError(err.into())
     }
 }
-#[async_trait]
+
+type AsyncTryFromStringFuture = impl Future<Output = Result<String, PhalanxClientError>>;
+
 impl AsyncTryFrom<PhalanxResponse> for String {
     type Error = PhalanxClientError;
 
-    async fn try_from(res: PhalanxResponse) -> Result<Self, Self::Error> {
-        Ok(String::from_utf8(Vec::from(&res.0.bytes().await?[..]))?)
+    type Future = AsyncTryFromStringFuture;
+
+    fn try_from(res: PhalanxResponse) -> Self::Future {
+        async { Ok(String::from_utf8(Vec::from(&res.0.bytes().await?[..]))?) }
     }
 }
 
-#[async_trait]
 impl AsyncTryFrom<PhalanxResponse> for () {
     type Error = PhalanxClientError;
 
-    async fn try_from(res: PhalanxResponse) -> Result<Self, Self::Error> {
-        res.0.error_for_status()?;
-        Ok(())
+    type Future = Ready<Result<Self, Self::Error>>;
+
+    fn try_from(res: PhalanxResponse) -> Self::Future {
+        match res.0.error_for_status() {
+            Err(e) => err(e.into()),
+            Ok(_) => ok(()),
+        }
     }
 }
