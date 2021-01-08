@@ -1,6 +1,8 @@
 use actix_web::{dev::Body, error::Error, HttpRequest, HttpResponse, Responder};
 use futures::future::{ok, Ready};
 
+pub mod mount;
+
 pub trait PhalanxServer: Clone {
     fn mount(config: &mut actix_web::web::ServiceConfig);
 }

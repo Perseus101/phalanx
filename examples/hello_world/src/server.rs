@@ -1,6 +1,6 @@
 use hello_world::SimpleServer;
 
-use phalanx::prelude::PhalanxServer;
+use phalanx::prelude::*;
 
 use actix_web::{middleware, App, HttpServer};
 
@@ -14,8 +14,7 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .wrap(middleware::Logger::default())
-            .configure(SimpleServer::mount)
-            .data(server.clone())
+            .phalanx_mount(server.clone())
     })
     .bind("127.0.0.1:8080")?
     .run()
