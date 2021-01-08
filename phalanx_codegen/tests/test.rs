@@ -1,7 +1,6 @@
 use phalanx::client::PhalanxClient;
-use phalanx::prelude::get;
 
-use phalanx_codegen::{phalanx_client, phalanx_server};
+use phalanx_codegen::{get, phalanx};
 
 mod noargs {
     use super::*;
@@ -18,8 +17,7 @@ mod noargs {
         }
     }
 
-    #[phalanx_client(NoArgClient)]
-    #[phalanx_server]
+    #[phalanx(NoArgClient)]
     impl NoArgServer {
         #[get("/")]
         async fn index(&self) {}

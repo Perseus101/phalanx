@@ -1,11 +1,11 @@
-use phalanx_codegen::{phalanx_client};
+use phalanx_codegen::{phalanx};
 
 #[derive(Clone)]
 struct Server;
 
 struct Client;
 
-#[phalanx_client]
+#[phalanx]
 impl Server {
     #[get("/")]
     async fn index(&self) {}

@@ -22,8 +22,7 @@ impl SimpleClient {
     }
 }
 
-#[phalanx_client(SimpleClient)]
-#[phalanx_server]
+#[phalanx(SimpleClient)]
 impl SimpleServer {
     #[get("/{id}/{name}/index.html")]
     async fn index(&self, id: u32, name: String) -> String {

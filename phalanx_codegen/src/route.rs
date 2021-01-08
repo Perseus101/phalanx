@@ -58,6 +58,12 @@ impl From<Route> for ServerRoute {
     }
 }
 
+impl ServerRoute {
+    pub fn fn_name(&self) -> &Ident {
+        self.0.fn_name()
+    }
+}
+
 impl ToTokens for ServerRoute {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
         // Get the method arguments, but skip the self parameter
