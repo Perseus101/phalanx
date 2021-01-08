@@ -1,0 +1,7 @@
+error: Missing a `#[client]` attribute on the client field
+ --> $DIR/missing-client-struct.rs:4:10
+  |
+4 | #[derive(PhalanxClient)]
+  |          ^^^^^^^^^^^^^
+  |
+  = note: this error originates in a derive macro (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,17 +1,13 @@
-use phalanx::client::{Client, PhalanxClient};
+use phalanx::client::Client;
 use phalanx::prelude::*;
 
 #[derive(Clone)]
 pub struct SimpleServer {}
 
+#[derive(PhalanxClient)]
 pub struct SimpleClient {
+    #[client]
     client: Client,
-}
-
-impl PhalanxClient for SimpleClient {
-    fn client(&self) -> &Client {
-        &self.client
-    }
 }
 
 impl SimpleClient {

@@ -1,6 +1,4 @@
-use phalanx::client::PhalanxClient;
-
-use phalanx_codegen::{get, phalanx};
+use phalanx_codegen::{get, phalanx, PhalanxClient};
 
 mod noargs {
     use super::*;
@@ -9,13 +7,8 @@ mod noargs {
     #[derive(Clone)]
     struct NoArgServer;
 
-    struct NoArgClient(Client);
-
-    impl PhalanxClient for NoArgClient {
-        fn client(&self) -> &Client {
-            &self.0
-        }
-    }
+    #[derive(PhalanxClient)]
+    struct NoArgClient(#[client] Client);
 
     #[phalanx(NoArgClient)]
     impl NoArgServer {
