@@ -2,16 +2,25 @@ use std::convert::TryFrom;
 
 use proc_macro2::{Ident, TokenStream as TokenStream2};
 
-use syn::{parse::Parse, Attribute, FnArg, ImplItemMethod, LitStr, Pat, Path, Type};
+use syn::{
+    parse::Parse, Attribute, FnArg, ImplItemMethod, LitStr, Pat, PatType, Path, ReturnType, Type,
+};
 
 use quote::{quote, ToTokens};
+
+use regex::Regex;
 
 use route_attr::RouteAttr;
 
 #[derive(Clone)]
 pub struct Route {
-    method: ImplItemMethod,
     server_type: Type,
+    ident: Ident,
+
+    args: Vec<PatType>,
+    path_args: Vec<PatType>,
+    payload_arg: Option<PatType>,
+    ret_type: ReturnType,
     attrs: Vec<Attribute>,
     route_attr: RouteAttr,
 }
@@ -19,6 +28,12 @@ pub struct Route {
 impl Route {
     pub fn new(method: &ImplItemMethod, server_type: &Type) -> syn::Result<Self> {
         validate_method(method)?;
+
+        // Get the method arguments, but  the self parameter
+        let args: Vec<_> = method.sig.inputs.iter().skip(1).map(|f| match f {
+            FnArg::Typed(typed) => typed.clone(),
+            FnArg::Receiver(_) => panic!("Receiver type found when it should have been automatically removed from arg list already.")
+        }).collect();
 
         let mut attrs = Vec::with_capacity(method.attrs.len() - 1);
         let mut route_attr = None;
@@ -37,16 +52,66 @@ impl Route {
             }
         }
 
-        Ok(Self {
-            method: method.clone(),
-            server_type: server_type.clone(),
-            attrs,
-            route_attr: route_attr.unwrap(),
-        })
-    }
+        let route_attr = route_attr
+            .ok_or_else(move || syn::Error::new_spanned(&method.sig, "Missing route attribute"))?;
 
-    pub fn fn_name(&self) -> &Ident {
-        &self.method.sig.ident
+        // Find which arguments are path arguments and determine if there is an extra payload argument
+        lazy_static::lazy_static! {
+            static ref RE: Regex = Regex::new(&r"\{([[:alpha:]_]+)\}").unwrap();
+        }
+
+        // Dirty hack to get the raw string value of the route
+        let path_str = format!("{:?}", route_attr.route);
+        let path_str = &path_str[17..path_str.len() - 3];
+
+        let mut path_arg_names: Vec<&str> = Vec::new();
+        for arg_name in RE.captures_iter(&path_str) {
+            let arg_name = arg_name.get(1).unwrap().as_str();
+            path_arg_names.push(arg_name);
+        }
+
+        let mut payload_arg = None;
+        let mut path_args = Vec::new();
+
+        fn contains_ident(names: &Vec<&str>, ident: &Ident) -> bool {
+            for name in names.iter() {
+                if ident == name {
+                    return true;
+                }
+            }
+            false
+        }
+
+        // Split args into path_args and payload_arg
+        for arg in args.iter() {
+            match arg.pat.as_ref() {
+                Pat::Ident(pat_ident) => {
+                    if contains_ident(&path_arg_names, &pat_ident.ident) {
+                        path_args.push(arg.clone());
+                    } else {
+                        if payload_arg.is_some() {
+                            return Err(syn::Error::new_spanned(
+                                &arg,
+                                "Multiple unmatched path args",
+                            ));
+                        }
+                        payload_arg = Some(arg.clone());
+                    }
+                }
+                pat => panic!("Unknown pattern: {:?}", pat),
+            }
+        }
+
+        Ok(Self {
+            server_type: server_type.clone(),
+            ident: method.sig.ident.clone(),
+            args,
+            path_args,
+            payload_arg,
+            ret_type: method.sig.output.clone(),
+            attrs,
+            route_attr,
+        })
     }
 }
 
@@ -60,35 +125,21 @@ impl From<Route> for ServerRoute {
 
 impl ServerRoute {
     pub fn fn_name(&self) -> &Ident {
-        self.0.fn_name()
+        &self.0.ident
     }
 }
 
 impl ToTokens for ServerRoute {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
-        // Get the method arguments, but skip the self parameter
-        let args: Vec<&FnArg> = self.0.method.sig.inputs.iter().skip(1).collect();
+        // Extract the identifier and type from each argument
+        let args = split_args(&self.0.args);
 
-        // Extract the arg names
-        let arg_names: Vec<&Ident> = args.iter().map(|f| match f {
-            FnArg::Typed(typed) => {
-                match typed.pat.as_ref() {
-                    Pat::Ident(pat_ident) => {
-                        &pat_ident.ident
-                    },
-                    pat => panic!("Unknown pattern: {:?}", pat),
-                }
-            },
-            FnArg::Receiver(_) => panic!("Receiver type found when it should have been automatically removed from arg list already.")
-        }).collect();
+        let arg_names = args.iter().map(|(ident, _)| ident);
 
-        // Extract the arg types
-        let arg_types: Vec<&Type> = args.iter().map(|f| match f {
-            FnArg::Typed(typed) => typed.ty.as_ref(),
-            FnArg::Receiver(_) => panic!("Receiver type found when it should have been automatically removed from arg list already.")
-        }).collect();
+        // Filter out the payload argument, if present
+        let path_args: Vec<_> = split_args(&self.0.path_args);
 
-        let (ret_type, ret_trailer) = match &self.0.method.sig.output {
+        let (ret_type, ret_trailer) = match &self.0.ret_type {
             syn::ReturnType::Default => (
                 quote! { -> phalanx::server::UnitResponder },
                 quote! { phalanx::server::UnitResponder },
@@ -97,21 +148,25 @@ impl ToTokens for ServerRoute {
         };
 
         // Output the new method
-        let fn_name = self.0.fn_name();
+        let fn_name = &self.0.ident;
         let server_type = &self.0.server_type;
         let RouteAttr { path, route } = &self.0.route_attr;
         let attrs = &self.0.attrs;
 
-        let path_args = if args.len() > 0 {
-            quote! { phalanx::reexports::web::Path(( #(#arg_names),* )): phalanx::reexports::web::Path<( #(#arg_types),* )> }
+        let path_args = if path_args.len() > 0 {
+            let arg_names = path_args.iter().map(|(ident, _)| ident);
+            let arg_types = path_args.iter().map(|(_, ty)| ty);
+            quote! { phalanx::reexports::web::Path(( #(#arg_names),* )): phalanx::reexports::web::Path<( #(#arg_types),* )>, }
         } else {
             quote! {}
         };
 
+        let payload_arg = &self.0.payload_arg;
+
         let stream = quote! {
             #[actix_web::#path(#route)]
             #(#attrs)*
-            async fn #fn_name ( server: phalanx::reexports::web::Data<#server_type>, #path_args ) #ret_type {
+            async fn #fn_name ( server: phalanx::reexports::web::Data<#server_type>, #path_args #payload_arg ) #ret_type {
                 let res = server.into_inner(). #fn_name ( #(#arg_names),* ).await;
                 #ret_trailer
             }
@@ -131,22 +186,19 @@ impl From<Route> for ClientRoute {
 
 impl ToTokens for ClientRoute {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
-        // Get the method arguments
-        let args: Vec<&FnArg> = self.0.method.sig.inputs.iter().collect();
-        let fn_name = self.0.fn_name();
-        let raw_ret_type = &self.0.method.sig.output;
+        let args = &self.0.args;
+        let fn_name = &self.0.ident;
+        let raw_ret_type = &self.0.ret_type;
         let attrs = &self.0.attrs;
         // let server_type = self.0.server_type;
         let RouteAttr { path, route } = &self.0.route_attr;
 
-        let format_args: Vec<TokenStream2> = args
+        // Get just the arguments which affect the path of the request
+        let path_args = split_args(&self.0.path_args);
+
+        let format_args: Vec<TokenStream2> = path_args
             .iter()
-            .skip(1)
-            .map(|arg| match arg {
-                FnArg::Typed(typed) => &typed.pat,
-                arg => panic!("Unknown argument type found: {:?}", arg),
-            })
-            .map(|ident| quote! { #ident = #ident })
+            .map(|(ident, _)| quote! { #ident = #ident })
             .collect();
 
         let format_url = if format_args.len() > 0 {
@@ -167,7 +219,7 @@ impl ToTokens for ClientRoute {
 
         let stream = quote! {
             #(#attrs)*
-            pub async fn #fn_name ( #(#args),* ) -> Result< #ret_type , Box<dyn std::error::Error> > {
+            pub async fn #fn_name ( &self, #(#args),* ) -> Result< #ret_type , Box<dyn std::error::Error> > {
                 let __client  = phalanx::client::PhalanxClient::client(self);
                 let res = phalanx::client::PhalanxResponse::from(__client.client. #path (&__client.format_url( #format_url )).send().await?);
                 Ok(<#ret_type as phalanx::util::AsyncTryFrom<phalanx::client::PhalanxResponse>>::try_from(res).await?)
@@ -242,6 +294,14 @@ fn validate_method(method: &ImplItemMethod) -> syn::Result<()> {
     Ok(())
 }
 
+fn split_args<'a>(args: &'a Vec<PatType>) -> Vec<(&'a Ident, &'a Type)> {
+    args.iter()
+        .map(|typed| match typed.pat.as_ref() {
+            Pat::Ident(pat_ident) => (&pat_ident.ident, typed.ty.as_ref()),
+            pat => panic!("Unknown pattern: {:?}", pat),
+        })
+        .collect()
+}
 mod route_attr {
     use std::convert::TryFrom;
 

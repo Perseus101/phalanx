@@ -12,6 +12,8 @@ syn = { version = "1.0.17", features = ["full"] }
 proc-macro-error = "0.4.12"
 quote = "1.0.3"
 proc-macro2 = "1.0.9"
+regex = "1.4.3"
+lazy_static = "1.4.0"
 
 [dev-dependencies]
 phalanx = { path = "../phalanx" }

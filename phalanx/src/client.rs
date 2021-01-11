@@ -1,5 +1,6 @@
 use std::{future::Future, string::FromUtf8Error};
 
+use actix_web::web::Json;
 use err_derive::Error;
 
 use futures::future::{err, ok, Ready};
@@ -86,5 +87,16 @@ impl AsyncTryFrom<PhalanxResponse> for () {
             Err(e) => err(e.into()),
             Ok(_) => ok(()),
         }
+    }
+}
+
+type AsyncTryFromJsonFuture<T> = impl Future<Output = Result<Json<T>, PhalanxClientError>>;
+
+impl<T: serde::de::DeserializeOwned> AsyncTryFrom<PhalanxResponse> for Json<T> {
+    type Error = PhalanxClientError;
+    type Future = AsyncTryFromJsonFuture<T>;
+
+    fn try_from(value: PhalanxResponse) -> Self::Future {
+        async { Ok(Json(value.0.json().await?)) }
     }
 }
