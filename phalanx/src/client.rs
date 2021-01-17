@@ -1,6 +1,5 @@
 use std::{future::Future, string::FromUtf8Error};
 
-use actix_web::web::Json;
 use err_derive::Error;
 
 use futures::future::{err, ok, Ready};
@@ -69,7 +68,11 @@ impl AsyncTryFrom<PhalanxResponse> for String {
     type Future = AsyncTryFromStringFuture;
 
     fn try_from(res: PhalanxResponse) -> Self::Future {
-        async { Ok(String::from_utf8(Vec::from(&res.0.bytes().await?[..]))?) }
+        async {
+            let res = res.0.error_for_status()?;
+            let bytes = res.bytes().await?;
+            Ok(String::from_utf8(Vec::from(&bytes[..]))?)
+        }
     }
 }
 
@@ -86,13 +89,23 @@ impl AsyncTryFrom<PhalanxResponse> for () {
     }
 }
 
-type AsyncTryFromJsonFuture<T> = impl Future<Output = Result<Json<T>, PhalanxClientError>>;
+#[allow(non_camel_case_types)]
+pub enum ContentType {
+    TEXT_PLAIN,
+    APPLICATION_JSON,
+}
 
-impl<T: serde::de::DeserializeOwned> AsyncTryFrom<PhalanxResponse> for Json<T> {
-    type Error = PhalanxClientError;
-    type Future = AsyncTryFromJsonFuture<T>;
+impl ContentType {
+    pub fn header_value(self) -> &'static str {
+        match self {
+            ContentType::TEXT_PLAIN => "text/plain",
+            ContentType::APPLICATION_JSON => "application/json",
+        }
+    }
+}
 
-    fn try_from(value: PhalanxResponse) -> Self::Future {
-        async { Ok(Json(value.0.json().await?)) }
+impl From<&String> for ContentType {
+    fn from(_: &String) -> Self {
+        Self::TEXT_PLAIN
     }
 }

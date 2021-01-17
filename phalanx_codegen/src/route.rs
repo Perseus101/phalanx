@@ -217,26 +217,34 @@ impl ToTokens for ClientRoute {
             }
         };
 
-        let payload = if let Some(payload) = &self.0.payload_arg {
+        let (content_type, payload) = if let Some(payload) = &self.0.payload_arg {
             match payload.pat.as_ref() {
-                Pat::Ident(ident) => quote! {
-                    .body({
-                        let body: phalanx::reexports::Body = std::convert::TryFrom::try_from(#ident)?;
-                        body
-                    })
-                },
+                Pat::Ident(ident) => (
+                    quote! {
+                        let __content_type = phalanx::client::ContentType::from(&#ident);
+                    },
+                    quote! {
+                        .header("content-type", __content_type.header_value())
+                        .body({
+                            let body: phalanx::reexports::Body = std::convert::TryFrom::try_from(#ident)?;
+                            body
+                        })
+                    },
+                ),
                 pat => panic!("Unknown pattern: {:?}", pat),
             }
         } else {
-            quote! {}
+            (quote! {}, quote! {})
         };
 
         let stream = quote! {
             #(#attrs)*
             pub async fn #fn_name ( &self, #(#args),* ) -> Result< #ret_type , Box<dyn std::error::Error> > {
                 let __client  = phalanx::client::PhalanxClient::client(self);
-                let res = phalanx::client::PhalanxResponse::from(__client.client. #path (&__client.format_url( #format_url )) #payload .send().await?);
-                Ok(<#ret_type as phalanx::util::AsyncTryFrom<phalanx::client::PhalanxResponse>>::try_from(res).await?)
+                #content_type
+                let __req = __client.client. #path (&__client.format_url( #format_url )) #payload;
+                let __res = phalanx::client::PhalanxResponse::from(__req.send().await?);
+                Ok(<#ret_type as phalanx::util::AsyncTryFrom<phalanx::client::PhalanxResponse>>::try_from(__res).await?)
             }
         };
 

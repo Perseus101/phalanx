@@ -97,9 +97,16 @@ impl<T: serde::de::DeserializeOwned> AsyncTryFrom<PhalanxResponse> for Json<T> {
 
     fn try_from(res: PhalanxResponse) -> Self::Future {
         async {
-            let bytes = res.0.bytes().await?;
+            let res = res.0.error_for_status()?;
+            let bytes = res.bytes().await?;
             let json = serde_json::from_slice(&bytes)?;
             Ok(Json(json))
         }
+    }
+}
+
+impl<T> From<&Json<T>> for crate::client::ContentType {
+    fn from(_: &Json<T>) -> Self {
+        Self::APPLICATION_JSON
     }
 }
