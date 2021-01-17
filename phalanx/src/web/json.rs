@@ -5,6 +5,11 @@ use futures::{future::Ready, FutureExt};
 use reqwest::Body;
 use serde::Serialize;
 
+use crate::{
+    client::{PhalanxClientError, PhalanxResponse},
+    util::AsyncTryFrom,
+};
+
 /// Struct wrapping actix_web's [Json](actix_web::web::Json) struct
 pub struct Json<T>(pub T);
 
@@ -67,6 +72,7 @@ impl<T: Serialize> Responder for Json<T> {
 
 type JsonFromRequestFuture<T> =
     impl std::future::Future<Output = Result<Json<T>, actix_web::Error>>;
+
 /// Json extractor. Allow to extract typed information from request's payload.
 impl<T> FromRequest for Json<T>
 where
@@ -80,5 +86,20 @@ where
     fn from_request(req: &HttpRequest, payload: &mut actix_web::dev::Payload) -> Self::Future {
         actix_web::web::Json::<T>::from_request(req, payload)
             .map(|res| res.map(|json| Json(json.into_inner())))
+    }
+}
+
+type JsonAsyncTryFrom<T> = impl std::future::Future<Output = Result<Json<T>, PhalanxClientError>>;
+
+impl<T: serde::de::DeserializeOwned> AsyncTryFrom<PhalanxResponse> for Json<T> {
+    type Error = PhalanxClientError;
+    type Future = JsonAsyncTryFrom<T>;
+
+    fn try_from(res: PhalanxResponse) -> Self::Future {
+        async {
+            let bytes = res.0.bytes().await?;
+            let json = serde_json::from_slice(&bytes)?;
+            Ok(Json(json))
+        }
     }
 }

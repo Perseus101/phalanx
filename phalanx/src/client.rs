@@ -43,7 +43,7 @@ pub trait PhalanxClient {
     fn client(&self) -> &Client;
 }
 
-pub struct PhalanxResponse(Response);
+pub struct PhalanxResponse(pub Response);
 
 impl From<Response> for PhalanxResponse {
     fn from(res: Response) -> Self {
@@ -56,13 +56,9 @@ pub enum PhalanxClientError {
     #[error(display = "error making request")]
     ReqwestError(#[error(source)] ReqwestError),
     #[error(display = "error parsing request")]
-    ParseError(Box<dyn std::error::Error>),
-}
-
-impl From<FromUtf8Error> for PhalanxClientError {
-    fn from(err: FromUtf8Error) -> Self {
-        PhalanxClientError::ParseError(err.into())
-    }
+    ParseError(#[error(source)] FromUtf8Error),
+    #[error(display = "error parsing request")]
+    SerdeJsonError(#[error(source)] serde_json::Error),
 }
 
 type AsyncTryFromStringFuture = impl Future<Output = Result<String, PhalanxClientError>>;
