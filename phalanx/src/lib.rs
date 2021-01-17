@@ -3,6 +3,7 @@
 pub mod client;
 pub mod server;
 pub mod util;
+pub mod web;
 
 pub use phalanx_codegen::{phalanx, PhalanxClient};
 
@@ -16,5 +17,5 @@ pub mod prelude {
 pub mod reexports {
     pub use actix_web::{http, middleware, web, App, HttpResponse, HttpServer, Responder};
 
-    pub use reqwest::Client;
+    pub use reqwest::{Body, Client};
 }

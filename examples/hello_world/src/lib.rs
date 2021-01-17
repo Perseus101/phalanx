@@ -20,19 +20,40 @@ impl SimpleClient {
 
 #[phalanx(SimpleClient)]
 impl SimpleServer {
-    #[get("/{id}/{name}/index.html")]
-    async fn index(&self, id: u32, name: String) -> String {
-        format!("Hello {}! id:{}", name, id)
+    #[get("/{name}/index.html")]
+    async fn index(&self, name: String) -> String {
+        format!("Hello {}!", name)
+    }
+
+    #[post("/foo")]
+    async fn foo(&self, name: String) -> String {
+        format!("Hello {}!", name)
     }
 }
 
 // impl SimpleClient {
-//     pub async fn index(&self, id: u32, name: String) -> Result<String, Box<dyn std::error::Error>> {
+//     pub async fn _index(&self, name: String) -> Result<String, Box<dyn std::error::Error>> {
+//         use phalanx::util::AsyncTryFrom;
 //         let client = phalanx::client::PhalanxClient::client(self);
-//         Ok(String::try_from(PhalanxResponse::from(
+//         Ok(String::try_from(phalanx::client::PhalanxResponse::from(
 //             client
 //                 .client
-//                 .get(&client.format_url(&format!("/{id}/{name}/index.html", id = id, name = name)))
+//                 .get(&client.format_url(&format!("/{name}/index.html", name = name)))
+//                 .send()
+//                 .await?,
+//         ))
+//         .await?)
+//     }
+
+//     pub async fn _foo(&self, name: String) -> Result<String, Box<dyn std::error::Error>> {
+//         use phalanx::util::AsyncTryFrom;
+//         let client = phalanx::client::PhalanxClient::client(self);
+//         let body: reqwest::Body = std::convert::TryFrom::try_from(name)?;
+//         Ok(String::try_from(phalanx::client::PhalanxResponse::from(
+//             client
+//                 .client
+//                 .post(&client.format_url(&format!("/foo")))
+//                 .body(body)
 //                 .send()
 //                 .await?,
 //         ))

@@ -19,3 +19,4 @@ lazy_static = "1.4.0"
 phalanx = { path = "../phalanx" }
 actix-web = "3.3.2"
 trybuild = "1.0.38"
+serde = "1.0.119"
