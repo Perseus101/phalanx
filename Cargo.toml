@@ -4,4 +4,5 @@ members = [
   "phalanx_codegen",
 
   "examples/hello_world",
+  "examples/diesel",
 ]
