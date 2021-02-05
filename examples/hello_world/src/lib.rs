@@ -61,16 +61,20 @@ impl SimpleServer {
 //     }
 // }
 
-// #[get("/{id}/{name}/index.html")]
-// async fn index(
-//     data: web::Data<SimpleServer>,
-//     web::Path((id, name)): web::Path<(u32, String)>,
-// ) -> impl Responder {
-//     data.into_inner().index(id, name)
-// }
-
 // impl PhalanxServer for SimpleServer {
-//     fn mount(config: &mut web::ServiceConfig) {
-//         config.service(index);
+//     fn mount(config: &mut phalanx::reexports::web::ServiceConfig) {
+//         use actix_web::web;
+//         async fn index(
+//             data: web::Data<SimpleServer>,
+//             web::Path(name): web::Path<String>,
+//         ) -> impl actix_web::Responder {
+//             data.into_inner().index(name).await
+//         }
+
+//         let resource = actix_web::Resource::new("/{name}/index.html")
+//             .name("index")
+//             .guard(actix_web::guard::Get())
+//             .to(index);
+//         config.service(resource);
 //     }
 // }

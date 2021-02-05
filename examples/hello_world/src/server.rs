@@ -2,9 +2,9 @@ use hello_world::SimpleServer;
 
 use phalanx::prelude::*;
 
-use actix_web::{middleware, App, HttpServer};
+use phalanx::reexports::{middleware, App, HttpServer};
 
-#[actix_web::main]
+#[phalanx::main]
 async fn main() -> std::io::Result<()> {
     std::env::set_var("RUST_LOG", "actix_web=info");
     env_logger::init();

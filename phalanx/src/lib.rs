@@ -5,7 +5,7 @@ pub mod server;
 pub mod util;
 pub mod web;
 
-pub use phalanx_codegen::{phalanx, PhalanxClient};
+pub use phalanx_codegen::{main, phalanx, PhalanxClient};
 
 pub mod prelude {
     pub use crate::server::{mount::PhalanxMount, PhalanxServer};
@@ -15,7 +15,9 @@ pub mod prelude {
 }
 
 pub mod reexports {
-    pub use actix_web::{http, middleware, web, App, HttpResponse, HttpServer, Responder};
+    pub use actix_web::{
+        guard, http, middleware, rt, web, App, HttpResponse, HttpServer, Resource, Responder,
+    };
 
     pub use reqwest::{Body, Client};
 }

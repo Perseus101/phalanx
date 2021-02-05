@@ -1,10 +1,8 @@
 use std::convert::TryFrom;
 
-use proc_macro2::{Ident, TokenStream as TokenStream2};
+use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 
-use syn::{
-    parse::Parse, Attribute, FnArg, ImplItemMethod, LitStr, Pat, PatType, Path, ReturnType, Type,
-};
+use syn::{parse::Parse, Attribute, FnArg, ImplItemMethod, LitStr, Pat, PatType, ReturnType, Type};
 
 use quote::{quote, ToTokens};
 
@@ -60,9 +58,7 @@ impl Route {
             static ref RE: Regex = Regex::new(&r"\{([[:alpha:]_]+)\}").unwrap();
         }
 
-        // Dirty hack to get the raw string value of the route
-        let path_str = format!("{:?}", route_attr.route);
-        let path_str = &path_str[17..path_str.len() - 3];
+        let path_str = route_attr.route.value();
 
         let mut path_arg_names: Vec<&str> = Vec::new();
         for arg_name in RE.captures_iter(&path_str) {
@@ -123,12 +119,6 @@ impl From<Route> for ServerRoute {
     }
 }
 
-impl ServerRoute {
-    pub fn fn_name(&self) -> &Ident {
-        &self.0.ident
-    }
-}
-
 impl ToTokens for ServerRoute {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
         // Extract the identifier and type from each argument
@@ -149,8 +139,10 @@ impl ToTokens for ServerRoute {
 
         // Output the new method
         let fn_name = &self.0.ident;
+        let fn_name_str = &self.0.ident.to_string();
         let server_type = &self.0.server_type;
-        let RouteAttr { path, route } = &self.0.route_attr;
+        let route = &self.0.route_attr.route;
+        let method = self.0.route_attr.method_ident();
         let attrs = &self.0.attrs;
 
         let path_args = if path_args.len() > 0 {
@@ -164,12 +156,17 @@ impl ToTokens for ServerRoute {
         let payload_arg = &self.0.payload_arg;
 
         let stream = quote! {
-            #[actix_web::#path(#route)]
             #(#attrs)*
             async fn #fn_name ( server: phalanx::reexports::web::Data<#server_type>, #path_args #payload_arg ) #ret_type {
                 let res = server.into_inner(). #fn_name ( #(#arg_names),* ).await;
                 #ret_trailer
             }
+
+            let __resource = phalanx::reexports::Resource::new(#route)
+                .name(#fn_name_str)
+                .guard(phalanx::reexports::guard:: #method ())
+                .to(#fn_name);
+            __config.service(__resource);
         };
 
         tokens.extend(stream);
@@ -190,8 +187,8 @@ impl ToTokens for ClientRoute {
         let fn_name = &self.0.ident;
         let raw_ret_type = &self.0.ret_type;
         let attrs = &self.0.attrs;
-        // let server_type = self.0.server_type;
-        let RouteAttr { path, route } = &self.0.route_attr;
+        let route = &self.0.route_attr.route;
+        let method = self.0.route_attr.method_ident_lower();
 
         // Get just the arguments which affect the path of the request
         let path_args = split_args(&self.0.path_args);
@@ -242,7 +239,7 @@ impl ToTokens for ClientRoute {
             pub async fn #fn_name ( &self, #(#args),* ) -> Result< #ret_type , Box<dyn std::error::Error> > {
                 let __client  = phalanx::client::PhalanxClient::client(self);
                 #content_type
-                let __req = __client.client. #path (&__client.format_url( #format_url )) #payload;
+                let __req = __client.client. #method (&__client.format_url( #format_url )) #payload;
                 let __res = phalanx::client::PhalanxResponse::from(__req.send().await?);
                 Ok(<#ret_type as phalanx::util::AsyncTryFrom<phalanx::client::PhalanxResponse>>::try_from(__res).await?)
             }
@@ -327,12 +324,72 @@ fn split_args<'a>(args: &'a Vec<PatType>) -> Vec<(&'a Ident, &'a Type)> {
 mod route_attr {
     use std::convert::TryFrom;
 
+    use syn::spanned::Spanned;
+
     use super::*;
+
+    macro_rules! method_type {
+        (
+            $($variant:ident, $lower:ident,)+
+        ) => {
+            #[derive(Debug, PartialEq, Eq, Hash, Clone)]
+            pub(super) enum MethodType {
+                $(
+                    $variant,
+                )+
+            }
+
+            impl MethodType {
+                fn as_str(&self) -> &'static str {
+                    match self {
+                        $(Self::$variant => stringify!($variant),)+
+                    }
+                }
+
+                fn as_lower_str(&self) -> &'static str {
+                    match self {
+                        $(Self::$variant => stringify!($lower),)+
+                    }
+                }
+
+
+                fn parse(method: &str) -> Result<Self, String> {
+                    match method {
+                        $(stringify!($lower) => Ok(Self::$variant),)+
+                        _ => Err(format!("Unexpected HTTP method: `{}`", method)),
+                    }
+                }
+            }
+        };
+    }
+
+    method_type! {
+        Get,       get,
+        Post,      post,
+        Put,       put,
+        Delete,    delete,
+        Head,      head,
+        Connect,   connect,
+        Options,   options,
+        Trace,     trace,
+        Patch,     patch,
+    }
 
     #[derive(Clone)]
     pub(super) struct RouteAttr {
-        pub path: Path,
+        pub method: MethodType,
         pub route: LitStr,
+        span: Span,
+    }
+
+    impl RouteAttr {
+        pub fn method_ident(&self) -> Ident {
+            Ident::new(self.method.as_str(), self.span)
+        }
+
+        pub fn method_ident_lower(&self) -> Ident {
+            Ident::new(self.method.as_lower_str(), self.span)
+        }
     }
 
     impl TryFrom<&Attribute> for RouteAttr {
@@ -351,10 +408,18 @@ mod route_attr {
                 }
             }
 
-            let path = attr.path.clone();
-            let RawRoute { route } = attr.parse_args::<RawRoute>()?;
+            let method_string = &attr.path.segments[attr.path.segments.len() - 1]
+                .ident
+                .to_string();
 
-            Ok(Self { path, route })
+            let method = MethodType::parse(method_string)
+                .map_err(|err| syn::Error::new_spanned(attr, err))?;
+            let RawRoute { route } = attr.parse_args::<RawRoute>()?;
+            Ok(Self {
+                method,
+                route,
+                span: attr.span(),
+            })
         }
     }
 }

@@ -11,8 +11,8 @@ name = "diesel_example"
 env_logger = "0.8.1"
 phalanx = { path = "../../phalanx" }
 
-actix-web = { version = "3.3.2" }
-reqwest = { version = "0.10.10" }
+actix-web = "3.3.2"
+reqwest = "0.10.10"
 diesel = { version = "1.4.5", features = ["sqlite", "r2d2"] }
 anyhow = "1.0.37"
 serde = "1.0.118"

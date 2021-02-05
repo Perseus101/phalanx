@@ -10,8 +10,6 @@ name = "hello_world"
 [dependencies]
 env_logger = "0.8.1"
 phalanx = { path = "../../phalanx" }
-
-actix-web = { version = "3.3.2" }
 reqwest = { version = "0.10.10" }
 
 [[bin]]

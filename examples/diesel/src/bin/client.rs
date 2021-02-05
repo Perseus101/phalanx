@@ -27,7 +27,7 @@ enum Opts {
     },
 }
 
-#[actix_web::main]
+#[phalanx::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = BlogClient::new("http://localhost:8080");
 

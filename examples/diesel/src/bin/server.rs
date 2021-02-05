@@ -8,7 +8,7 @@ use phalanx::prelude::*;
 
 use actix_web::{middleware, App, HttpServer};
 
-#[actix_web::main]
+#[phalanx::main]
 async fn main() -> anyhow::Result<()> {
     std::env::set_var("RUST_LOG", "actix_web=debug,phalanx=info");
     env_logger::init();

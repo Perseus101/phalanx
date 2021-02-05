@@ -48,3 +48,32 @@ pub fn derive_serialize(input: TokenStream) -> TokenStream {
         Ok(s) => s.into(),
     }
 }
+
+#[proc_macro_attribute]
+pub fn main(_: TokenStream, item: TokenStream) -> TokenStream {
+    use quote::quote;
+
+    let mut input = syn::parse_macro_input!(item as syn::ItemFn);
+    let attrs = &input.attrs;
+    let vis = &input.vis;
+    let sig = &mut input.sig;
+    let body = &input.block;
+    let name = &sig.ident;
+
+    if sig.asyncness.is_none() {
+        return syn::Error::new_spanned(sig.fn_token, "only async fn is supported")
+            .to_compile_error()
+            .into();
+    }
+
+    sig.asyncness = None;
+
+    (quote! {
+        #(#attrs)*
+        #vis #sig {
+            phalanx::reexports::rt::System::new(stringify!(#name))
+                .block_on(async move { #body })
+        }
+    })
+    .into()
+}

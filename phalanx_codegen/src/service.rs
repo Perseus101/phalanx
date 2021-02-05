@@ -1,5 +1,4 @@
 use proc_macro::TokenStream;
-use proc_macro2::TokenStream as TokenStream2;
 use quote::{quote, ToTokens};
 
 use syn::{parse_macro_input, Error, ImplItem, ItemImpl, Type};
@@ -84,14 +83,6 @@ impl ServerService {
             server_type,
         }
     }
-
-    fn services(&self) -> Vec<TokenStream2> {
-        self.routes
-            .iter()
-            .map(|route| route.fn_name())
-            .map(|ident| quote! { config.service( #ident ); })
-            .collect()
-    }
 }
 
 impl ToTokens for Service {
@@ -126,15 +117,12 @@ impl ToTokens for ClientService {
 impl ToTokens for ServerService {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let routes = &self.routes;
-        let services = self.services();
         let server_type = &self.server_type;
 
         tokens.extend(quote! {
-            #(#routes)*
-
             impl phalanx::server::PhalanxServer for #server_type {
-                fn mount(config: &mut phalanx::reexports::web::ServiceConfig) {
-                    #(#services)*
+                fn mount(__config: &mut phalanx::reexports::web::ServiceConfig) {
+                    #(#routes)*
                 }
             }
         });
