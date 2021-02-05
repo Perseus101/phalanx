@@ -3,7 +3,7 @@ use quote::{quote, ToTokens};
 
 use syn::{parse_macro_input, Error, ImplItem, ItemImpl, Type};
 
-use crate::route::{ClientRoute, Route, ServerRoute};
+use crate::route::{client::ClientRoute, server::ServerRoute, Route};
 
 /// Wrapper for a single service
 pub struct Service {
