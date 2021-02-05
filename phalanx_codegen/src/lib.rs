@@ -45,7 +45,7 @@ pub fn derive_serialize(input: TokenStream) -> TokenStream {
 
     match derive::derive_serialize_inner(input) {
         Err(e) => e.to_compile_error().into(),
-        Ok(s) => s.into(),
+        Ok(s) => s,
     }
 }
 

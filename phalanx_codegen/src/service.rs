@@ -36,10 +36,7 @@ impl Service {
             .map(|route| ClientRoute::from(route.clone()))
             .collect();
 
-        let server_routes: Vec<ServerRoute> = routes
-            .into_iter()
-            .map(|route| ServerRoute::from(route))
-            .collect();
+        let server_routes: Vec<ServerRoute> = routes.into_iter().map(ServerRoute::from).collect();
 
         let server_type = parsed_impl.self_ty.as_ref();
 

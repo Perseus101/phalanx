@@ -14,17 +14,19 @@ pub fn derive_serialize_inner(input: DeriveInput) -> Result<TokenStream, Error> 
                     if attr.path.is_ident("client") {
                         client_index = Some(i);
                         client_ident = field.ident.clone();
+                        break;
                     }
-                    break;
                 }
             }
 
             match &s.fields {
                 syn::Fields::Named(_named) => {
-                    let client_ident = client_ident.ok_or(Error::new(
-                        Span::call_site(),
-                        "Missing a `#[client]` attribute on the client field",
-                    ))?;
+                    let client_ident = client_ident.ok_or_else(|| {
+                        Error::new(
+                            Span::call_site(),
+                            "Missing a `#[client]` attribute on the client field",
+                        )
+                    })?;
 
                     let output = quote! {
                         impl phalanx::client::PhalanxClient for #client_type {
@@ -36,10 +38,12 @@ pub fn derive_serialize_inner(input: DeriveInput) -> Result<TokenStream, Error> 
                     Ok(output.into())
                 }
                 syn::Fields::Unnamed(_unnamed) => {
-                    let client_index = Index::from(client_index.ok_or(Error::new(
-                        Span::call_site(),
-                        "Missing a `#[client]` attribute on the client field",
-                    ))?);
+                    let client_index = Index::from(client_index.ok_or_else(|| {
+                        Error::new(
+                            Span::call_site(),
+                            "Missing a `#[client]` attribute on the client field",
+                        )
+                    })?);
 
                     let output = quote! {
                         impl phalanx::client::PhalanxClient for #client_type {

@@ -37,7 +37,7 @@ impl ToTokens for ServerRoute {
         let method = self.0.route_attr.method_ident();
         let attrs = &self.0.attrs;
 
-        let path_args = if path_args.len() > 0 {
+        let path_args = if !path_args.is_empty() {
             let arg_names = path_args.iter().map(|(ident, _)| ident);
             let arg_types = path_args.iter().map(|(_, ty)| ty);
             quote! { phalanx::reexports::web::Path(( #(#arg_names),* )): phalanx::reexports::web::Path<( #(#arg_types),* )>, }

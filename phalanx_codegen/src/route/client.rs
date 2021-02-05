@@ -27,7 +27,7 @@ impl ToTokens for ClientRoute {
             .map(|(ident, _)| quote! { #ident = #ident })
             .collect();
 
-        let format_url = if format_args.len() > 0 {
+        let format_url = if !format_args.is_empty() {
             quote! { &format!( #route , #(#format_args),* ) }
         } else {
             quote! { #route }

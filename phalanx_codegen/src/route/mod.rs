@@ -72,7 +72,7 @@ impl Route {
         let mut payload_arg = None;
         let mut path_args = Vec::new();
 
-        fn contains_ident(names: &Vec<&str>, ident: &Ident) -> bool {
+        fn contains_ident(names: &[&str], ident: &Ident) -> bool {
             for name in names.iter() {
                 if ident == name {
                     return true;
@@ -178,7 +178,7 @@ fn validate_method(method: &ImplItemMethod) -> syn::Result<()> {
     Ok(())
 }
 
-fn split_args<'a>(args: &'a Vec<PatType>) -> Vec<(&'a Ident, &'a Type)> {
+fn split_args<'a>(args: &'a [PatType]) -> Vec<(&'a Ident, &'a Type)> {
     args.iter()
         .map(|typed| match typed.pat.as_ref() {
             Pat::Ident(pat_ident) => (&pat_ident.ident, typed.ty.as_ref()),
